@@ -43,6 +43,148 @@ use core_badges\external\user_badge_exporter;
 class core_badges_external extends external_api {
 
     /**
+     * Describes the parameters for get_badge_users.
+     *
+     * @return external_function_parameters
+     * @since Moodle 3.8
+     */
+    public static function get_badge_users_parameters() {
+        return new external_function_parameters (
+            array(
+                'badgeids' => new external_value(PARAM_SEQUENCE,
+                    'IDs of the badges of which users must have one', VALUE_DEFAULT, ''),
+                'includeexpired' => new external_value(PARAM_BOOL,
+                    'If true all users are returned, even if their badge is expired', VALUE_DEFAULT, false),
+                'includesuspended' => new external_value(PARAM_BOOL,
+                    'If true, include disabled users as well', VALUE_DEFAULT, false)
+            )
+        );
+    }
+
+    /**
+     * Return a list of users which have earned the specified badge and match the specified criteria
+     *
+     * @param string $badgeids sequence of badge ids (12,33,...), if empty all badges will be considered (default: '')
+     * @param bool $includeexpired should expired badges be included (default: false)
+     * @param bool $includesuspended should suspended user be included (default: false)
+     * @return array
+     * @throws dml_exception
+     * @throws invalid_parameter_exception
+     * @throws moodle_exception
+     * @since Moodle 3.8
+     */
+    public static function get_badge_users($badgeids = '', $includeexpired = false, $includesuspended = false) {
+        global $CFG, $DB, $USER;
+
+        $warnings = array();
+
+        $params = array(
+            'badgeids' => $badgeids,
+            'includeexpired' => $includeexpired,
+            'includesuspended' => $includesuspended
+        );
+        $params = self::validate_parameters(self::get_badge_users_parameters(), $params);
+
+        $usercontext = context_user::instance($USER->id);
+        self::validate_context($usercontext);
+        require_capability('moodle/badges:viewotherbadges', $usercontext);
+
+        if ($badgeids === '') {
+            $badgeids = array();
+            $records = $DB->get_records('badge', null, '', 'id');
+            foreach ($records as $badge) {
+                $badgeids[] = $badge->id;
+            }
+        } else {
+            $badgeids = array_map('intval', explode(',', $badgeids));
+        }
+
+        if (empty($CFG->enablebadges)) {
+            throw new moodle_exception('badgesdisabled', 'badges');
+        }
+        $result = array();
+        foreach ($badgeids as $badgeid) {
+            $now = time();
+            $badge = null;
+            if ($DB->record_exists('badge', ['id' => $badgeid])) {
+                $record = $DB->get_record('badge', ['id' => $badgeid], 'id,name,status', MUST_EXIST);
+                $badge = ['id' => $record->id,
+                    'name' => $record->name,
+                    'status' => $record->status];
+            } else {
+                throw new moodle_exception('badgeidnotvalid', 'badges');
+            }
+
+            $partresult = array();
+            $partresult['badge'] = $badge;
+            $partresult['users'] = array();
+            $partresult['warnings'] = $warnings;
+
+            $sql = 'SELECT u.*, bi.dateissued, bi.dateexpire
+                FROM {badge_issued} bi
+                JOIN {user} u
+                    ON u.id=userid
+                WHERE badgeid = ?';
+
+            if (!$params['includeexpired']) {
+                $sql = $sql . ' AND (bi.dateexpire IS NULL OR bi.dateexpire > ' . $now . ')';
+            }
+            if (!$params['includesuspended']) {
+                $sql = $sql . ' AND u.suspended = 0';
+            }
+            $userrecords = $DB->get_records_sql($sql, [$badge['id']]);
+
+            foreach ($userrecords as $user) {
+                $item = [
+                    'id' => $user->id,
+                    'username' => $user->username,
+                    'idnumber' => $user->idnumber,
+                    'suspended' => $user->suspended,
+                    'dateissued' => $user->dateissued,
+                    'dateexpire' => $user->dateexpire];
+                $partresult['users'][] = $item;
+            }
+            $result[] = $partresult;
+        }
+        return $result;
+    }
+
+    /**
+     * Describes the get_badge_users return value.
+     *
+     * @return external_multiple_structure
+     * @since Moodle 3.8
+     */
+    public static function get_badge_users_returns() {
+        return new external_multiple_structure(
+            new external_single_structure(
+                array(
+                    'badge' => new external_single_structure(
+                        array(
+                            'id' => new external_value(PARAM_INT, 'id of the badge'),
+                            'name' => new external_value(PARAM_RAW, 'name of the badge'),
+                            'status' => new external_value(PARAM_INT, 'status of the badge')
+                        )
+                    ),
+                    'users' => new external_multiple_structure(
+                        new external_single_structure(
+                            array(
+                                'id' => new external_value(PARAM_INT, 'ID of the user'),
+                                'username' => new external_value(PARAM_RAW, 'username of the user'),
+                                'idnumber' => new external_value(PARAM_RAW, 'idnumber of the user'),
+                                'suspended' => new external_value(PARAM_BOOL, 'is the user suspended'),
+                                'dateissued' => new external_value(PARAM_INT, 'time when the badge was issued to the student'),
+                                'dateexpire' => new external_value(PARAM_INT, 'time when the badge will expire')
+                            )
+                        )
+                    ),
+                    'warnings' => new external_warnings(),
+                )
+            )
+        );
+    }
+
+    /**
      * Describes the parameters for get_user_badges.
      *
      * @return external_function_parameters

@@ -148,6 +148,7 @@ $string['badgesalt'] = 'Salt for hashing the recipient\'s email address';
 $string['badgesalt_desc'] = 'Using a hash allows backpack services to confirm the badge earner without having to expose their email address. This setting should only use numbers and letters.
 
 Note: For recipient verification purposes, please avoid changing this setting once you start issuing badges.';
+$string['badgeidnotvalid'] = 'The passed id does not correspond to a badge!';
 $string['badgesdisabled'] = 'Badges are not enabled on this site.';
 $string['badgesearned'] = 'Number of badges earned: {$a}';
 $string['badgesettings'] = 'Badges settings';

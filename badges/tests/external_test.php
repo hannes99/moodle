@@ -94,6 +94,7 @@ class core_badges_external_testcase extends externallib_advanced_testcase {
 
         $badgeid = $DB->insert_record('badge', $badge, true);
         $badge = new badge($badgeid);
+        $this->sitebadgeid = $badgeid;
         $badge->issue($this->student->id, true);
 
         // Hack the database to adjust the time each badge was issued.
@@ -137,6 +138,7 @@ class core_badges_external_testcase extends externallib_advanced_testcase {
         $coursebadgeid = $DB->insert_record('badge', $badge, true);
         $badge = new badge($coursebadgeid);
         $badge->issue($this->student->id, true);
+        $this->coursebadgeid = $coursebadgeid;
 
         // Hack the database to adjust the time each badge was issued.
         $DB->set_field('badge_issued', 'dateissued', $now - 11, array('userid' => $this->student->id, 'badgeid' => $coursebadgeid));
@@ -245,5 +247,87 @@ class core_badges_external_testcase extends externallib_advanced_testcase {
                 $this->assertFalse(isset($badge['message']));
             }
         }
+    }
+
+
+    /**
+     * Test get badge users
+     * @covers core_badges_external::get_badge_users
+     */
+    public function test_get_badge_users() {
+        global $DB;
+        $this->setUser($this->teacher);
+
+        // Suspend the user in order to test the 'includesuspended' parameter.
+        $DB->set_field('user', 'suspended', 1, array('id' => $this->student->id));
+
+        $result = core_badges_external::get_badge_users('', true, false);
+        $result = external_api::clean_returnvalue(core_badges_external::get_badge_users_returns(), $result);
+        // Suspended users not included.
+        // We expect the result to contain two entries, each must container zero users.
+        self::assertCount(2, $result);
+        self::assertCount(0, $result[0]['users']);
+        self::assertCount(0, $result[1]['users']);
+
+        $result = core_badges_external::get_badge_users('', true, true);
+        $result = external_api::clean_returnvalue(core_badges_external::get_badge_users_returns(), $result);
+        // Suspended users included.
+        // We expect the result to contain two entries, each must have one user.
+        self::assertCount(2, $result);
+        self::assertCount(1, $result[0]['users']);
+        self::assertCount(1, $result[1]['users']);
+
+        $result = core_badges_external::get_badge_users($this->sitebadgeid.'', true, true);
+        $result = external_api::clean_returnvalue(core_badges_external::get_badge_users_returns(), $result);
+        // Suspended users included, only sitebadge.
+        // We expect the result to contain one entry, each must contain one user.
+        self::assertCount(1, $result);
+        self::assertCount(1, $result[0]['users']);
+
+        $result = core_badges_external::get_badge_users($this->sitebadgeid.','.$this->coursebadgeid, true, true);
+        $result = external_api::clean_returnvalue(core_badges_external::get_badge_users_returns(), $result);
+        // Suspended users included, only sitebadge and coursebadge(in our case those are all).
+        // We expect the result to contain two entries, each must have one user.
+        self::assertCount(2, $result);
+        self::assertCount(1, $result[0]['users']);
+        self::assertCount(1, $result[1]['users']);
+
+        // Un-suspend user after testing.
+        $DB->set_field('user', 'suspended', 0, array('id' => $this->student->id));
+
+        // Set expire date directly in order to test the 'includeexpired' parameter.
+        // The sitebadge is expired for the student.
+        $DB->set_field('badge_issued', 'dateexpire', time() - 5,
+            array('userid' => $this->student->id, 'badgeid' => $this->sitebadgeid));
+
+        $result = core_badges_external::get_badge_users('', false, true);
+        $result = external_api::clean_returnvalue(core_badges_external::get_badge_users_returns(), $result);
+        // Expired badges not included.
+        // We expect the result to contain two entries, the first must container zero users, the second must container 1 user.
+        self::assertCount(2, $result);
+        self::assertCount(0, $result[0]['users']);
+        self::assertCount(1, $result[1]['users']);
+
+        $result = core_badges_external::get_badge_users('', true, true);
+        $result = external_api::clean_returnvalue(core_badges_external::get_badge_users_returns(), $result);
+        // Expired badges included.
+        // We expect the result to contain two entries, each must contain 1 user.
+        self::assertCount(2, $result);
+        self::assertCount(1, $result[0]['users']);
+        self::assertCount(1, $result[1]['users']);
+
+        $result = core_badges_external::get_badge_users($this->coursebadgeid.'', false, true);
+        $result = external_api::clean_returnvalue(core_badges_external::get_badge_users_returns(), $result);
+        // Expired badges not included, only coursebadge.
+        // We expect the result to contain two entries, the first must have zero users, the second must have 1 user.
+        self::assertCount(1, $result);
+        self::assertCount(1, $result[0]['users']);
+
+        $result = core_badges_external::get_badge_users($this->sitebadgeid.'', false, true);
+        $result = external_api::clean_returnvalue(core_badges_external::get_badge_users_returns(), $result);
+        // Expired badges not included, only sitebadge.
+        // We expect the result to contain one entry, which must contain no users.
+        self::assertCount(1, $result);
+        self::assertCount(0, $result[0]['users']);
     }
 }
