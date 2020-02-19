@@ -94,6 +94,7 @@ class core_badges_external_testcase extends externallib_advanced_testcase {
 
         $badgeid = $DB->insert_record('badge', $badge, true);
         $badge = new badge($badgeid);
+        $this->sitebadgeid = $badgeid;
         $badge->issue($this->student->id, true);
 
         // Hack the database to adjust the time each badge was issued.
@@ -245,5 +246,92 @@ class core_badges_external_testcase extends externallib_advanced_testcase {
                 $this->assertFalse(isset($badge['message']));
             }
         }
+    }
+
+    /**
+     * Test get badges
+     * @covers core_badges_external::get_badges
+     */
+    public function test_get_badges() {
+        global $DB;
+        $this->setUser($this->teacher);
+
+        // Get all the badges since no filter is specified
+        $result = core_badges_external::get_badges();
+        $result = external_api::clean_returnvalue(core_badges_external::get_badges_returns(), $result);
+        // We expect the result to contain two entries
+        self::assertCount(2, $result);
+        self::assertCount(2, $result["badges"]);
+        self::assertCount(0, $result["warnings"]);
+
+        // Get Badges with the name "Test badge site".
+        $result = core_badges_external::get_badges(0, 'Test badge site');
+        $result = external_api::clean_returnvalue(core_badges_external::get_badges_returns(), $result);
+        // We expect the result to contain one badge.
+        self::assertCount(2, $result);
+        self::assertCount(1, $result["badges"]);
+        self::assertCount(0, $result["warnings"]);
+
+        // Get only active locked badges.
+        $result = core_badges_external::get_badges(0, '', 0, 0, 0, 0, BADGE_STATUS_ACTIVE_LOCKED);
+        $result = external_api::clean_returnvalue(core_badges_external::get_badges_returns(), $result);
+        // We expect the result to contain two badges.
+        self::assertCount(2, $result);
+        self::assertCount(2, $result["badges"]);
+        self::assertCount(0, $result["warnings"]);
+
+        $DB->set_field('badge', 'status', BADGE_STATUS_INACTIVE, array('id' => $this->sitebadgeid));
+
+        // Get only active locked badges.
+        $result = core_badges_external::get_badges(0, '', 0, 0, 0, 0, BADGE_STATUS_ACTIVE_LOCKED);
+        $result = external_api::clean_returnvalue(core_badges_external::get_badges_returns(), $result);
+        // We expect the result to contain one badge, since one was set inactive.
+        self::assertCount(2, $result);
+        self::assertCount(1, $result["badges"]);
+        self::assertCount(0, $result["warnings"]);
+
+        // Get only inactive badges.
+        $result = core_badges_external::get_badges(0, '', 0, 0, 0, 0, BADGE_STATUS_INACTIVE);
+        $result = external_api::clean_returnvalue(core_badges_external::get_badges_returns(), $result);
+        // We expect the result to contain one badge, since one was set inactive.
+        self::assertCount(2, $result);
+        self::assertCount(1, $result["badges"]);
+        self::assertCount(0, $result["warnings"]);
+
+        // Get only badges with an expireperiod of 200.
+        $result = core_badges_external::get_badges(0, '', 0, 200);
+        $result = external_api::clean_returnvalue(core_badges_external::get_badges_returns(), $result);
+        // We expect the result to contain no badge,.
+        self::assertCount(2, $result);
+        self::assertCount(0, $result["badges"]);
+        self::assertCount(0, $result["warnings"]);
+
+        $DB->set_field('badge', 'expireperiod', 200, array('id' => $this->sitebadgeid));
+
+        // Get only badges with an expireperiod of 200.
+        $result = core_badges_external::get_badges(0, '', 0, 200);
+        $result = external_api::clean_returnvalue(core_badges_external::get_badges_returns(), $result);
+        // We expect the result to contain one badge,.
+        self::assertCount(2, $result);
+        self::assertCount(1, $result["badges"]);
+        self::assertCount(0, $result["warnings"]);
+
+        // Get only badges with an expireperiod of 200 and which are active locked.
+        $result = core_badges_external::get_badges(0, '', 0, 200, 0, 0, BADGE_STATUS_ACTIVE_LOCKED);
+        $result = external_api::clean_returnvalue(core_badges_external::get_badges_returns(), $result);
+        // We expect the result to contain no badge,.
+        self::assertCount(2, $result);
+        self::assertCount(0, $result["badges"]);
+        self::assertCount(0, $result["warnings"]);
+
+        $DB->set_field('badge', 'status', BADGE_STATUS_ACTIVE_LOCKED, array('id' => $this->sitebadgeid));
+
+        // Get only badges with an expireperiod of 200 and which are active locked.
+        $result = core_badges_external::get_badges(0, '', 0, 200, 0, 0, BADGE_STATUS_ACTIVE_LOCKED);
+        $result = external_api::clean_returnvalue(core_badges_external::get_badges_returns(), $result);
+        // We expect the result to contain no badge,.
+        self::assertCount(2, $result);
+        self::assertCount(1, $result["badges"]);
+        self::assertCount(0, $result["warnings"]);
     }
 }

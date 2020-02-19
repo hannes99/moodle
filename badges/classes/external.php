@@ -43,6 +43,160 @@ use core_badges\external\user_badge_exporter;
 class core_badges_external extends external_api {
 
     /**
+     * Describes the parameters for get_badges.
+     *
+     * @return external_function_parameters
+     * @since Moodle 3.8
+     */
+    public static function get_badges_parameters() {
+        return new external_function_parameters (
+            array(
+                'id' => new external_value(PARAM_INT, 'ID of the badge', VALUE_DEFAULT, 0),
+                'name' => new external_value(PARAM_RAW, 'Filter badges by name', VALUE_DEFAULT, ''),
+                'expiredate' => new external_value(PARAM_INT, 'Filter badges by expiredate', VALUE_DEFAULT, 0),
+                'expireperiod' => new external_value(PARAM_INT, 'Filter badges by expireperiod', VALUE_DEFAULT, 0),
+                'type' => new external_value(PARAM_INT, 'Filter badge by type (1: site or 2: course)', VALUE_DEFAULT, 0),
+                'courseid' => new external_value(PARAM_INT, 'Filter badges by courseid, only if type is 2', VALUE_DEFAULT, 0),
+                'status' => new external_value(PARAM_INT, 'Filter badges current status (0: inactive, 1: active, 2: inactive locked, 3: active locked, 4: archived, >4: no filter on status)', VALUE_DEFAULT, 5),
+                'version' => new external_value(PARAM_RAW, 'Filter badges by version', VALUE_DEFAULT, '')
+            )
+        );
+    }
+
+    /**
+     * Returns a list of badges matching the passed criteria
+     *
+     * @param int $id the id of the badge
+     * @param string $name string to filter the badges name by
+     * @param int $expiredate timestamp to filter the badges by
+     * @param int $expireperiod timestamp to filter the badges name by
+     * @param int $type only return badges of a specific type (1: site, 2: course, 0: all)
+     * @param int $courseid id of the course to filter the badges by, only if type is 2
+     * @param int $status only return badges of a specific status (0: inactive, 1: active, 2: inactive locked, 3: active locked, 4: archived, >4: no filter on status)
+     * @param string $version string to filter the badges version by
+     * @return array
+     * @throws invalid_parameter_exception
+     * @throws moodle_exception
+     * @since Moodle 3.8
+     */
+    public static function get_badges($id = 0, $name='', $expiredate=0, $expireperiod=0, $type=0, $courseid=0, $status=5, $version='') {
+        global $CFG, $USER, $DB;
+
+        $warnings = array();
+
+        $params = array(
+            'id' => $id,
+            'name' => $name,
+            'expiredate' => $expiredate,
+            'expireperiod' => $expireperiod,
+            'type' => $type,
+            'courseid' => $courseid,
+            'status' => $status,
+            'version' => $version
+        );
+        $params = self::validate_parameters(self::get_badges_parameters(), $params);
+
+        $usercontext = context_user::instance($USER->id);
+        self::validate_context($usercontext);
+        require_capability('moodle/badges:viewotherbadges', $usercontext);
+
+        if (empty($CFG->enablebadges)) {
+            throw new moodle_exception('badgesdisabled', 'badges');
+        }
+
+        $sqlclauses = array();
+        $sqlclausevalues = array();
+
+        if ($params['id'] != 0) {
+            $sqlclauses[] = 'b.id = ?';
+            $sqlclausevalues[] = $params['id'];
+        }
+        if (!empty($params['name'])) {
+            $sqlclauses[] = '(' . $DB->sql_like('b.name', ':name', true) . ')';
+            $sqlclausevalues['name'] = '%'.$params['name'].'%';
+        }
+        if (!empty($params['version'])) {
+            $sqlclauses[] = '(' . $DB->sql_like('b.version', ':version', true) . ')';
+            $sqlclausevalues['version'] = '%'.$params['version'].'%';
+        }
+        if ($params['expiredate'] != 0) {
+            $sqlclauses[] = $DB->sql_equal('b.expiredate', ':expiredate');
+            $sqlclausevalues['expiredate'] = $params['expiredate'];
+        }
+        if ($params['expireperiod'] != 0) {
+            $sqlclauses[] = $DB->sql_equal('b.expireperiod', ':expireperiod');
+            $sqlclausevalues['expireperiod'] = $params['expireperiod'];
+        }
+        if ($params['type'] != 0) {
+            $sqlclauses[] = $DB->sql_equal('b.type', ':type');
+            $sqlclausevalues['type'] = $params['type'];
+        }
+        if ($params['courseid'] != 0) {
+            $sqlclauses[] = $DB->sql_equal('b.courseid', ':courseid');
+            $sqlclausevalues['courseid'] = $params['courseid'];
+        }
+        if ($params['status'] < 5) {
+            $sqlclauses[] = $DB->sql_equal('b.status', ':status');
+            $sqlclausevalues['status'] = $params['status'];
+        }
+
+        $sql = 'SELECT b.* FROM {badge} b';
+        if (!empty($sqlclauses)) {
+            $sql = $sql.' WHERE ';
+        }
+        $sql = $sql.(implode(' AND ', $sqlclauses));
+
+        $badges = $DB->get_records_sql($sql, $sqlclausevalues);
+
+        return ['badges'=>$badges, 'warnings'=>$warnings];
+    }
+
+    /**
+     * Describes the get_badges return value.
+     *
+     * @return external_single_structure
+     * @since Moodle 3.8
+     */
+    public static function get_badges_returns() {
+        return new external_single_structure(
+            array(
+                'badges' => new external_multiple_structure(
+                    new external_single_structure(
+                        array(
+                            'id' => new external_value(PARAM_INT, 'id of the badge'),
+                            'name' => new external_value(PARAM_RAW, 'name of the badge'),
+                            'description' => new external_value(PARAM_RAW, 'description of the badge'),
+                            'timecreated' => new external_value(PARAM_INT, 'Timestamp the badge was created'),
+                            'timemodified' => new external_value(PARAM_INT, 'Timestamp the badge was last modified'),
+                            'usercreated' => new external_value(PARAM_INT, 'ID of the user who created the badge'),
+                            'usermodified' => new external_value(PARAM_INT, 'ID of the user who last modified the badge'),
+                            'issuername' => new external_value(PARAM_RAW, 'Name of the issuer of the badge'),
+                            'issuerurl' => new external_value(PARAM_RAW, 'Issuer URL, e.g. homepage'),
+                            'issuercontact' => new external_value(PARAM_RAW, 'Contact information of the issuer', VALUE_OPTIONAL),
+                            'expiredate' => new external_value(PARAM_INT, 'Fixed date when the badge will expire', VALUE_OPTIONAL),
+                            'expireperiod' => new external_value(PARAM_INT, 'Relative date when the badge will expire, after the badge was issued', VALUE_OPTIONAL),
+                            'type' => new external_value(PARAM_INT, 'Type of the badge (1: site badge, 2: course badge)'),
+                            'courseid' => new external_value(PARAM_INT, 'The course where the badge relates to, only if type = 2', VALUE_OPTIONAL),
+                            'message' => new external_value(PARAM_RAW, 'Text of the message the user receives when the badge is issued'),
+                            'messagesubject' => new external_value(PARAM_RAW, 'Subject of the message the user receives when the badge is issued'),
+                            'attachement' => new external_value(PARAM_INT, 'Whether to attach badge to message', VALUE_OPTIONAL),
+                            'notification' => new external_value(PARAM_INT, 'Whether to notify issuer when badge is awarded'. VALUE_OPTIONAL),
+                            'status' => new external_value(PARAM_INT, 'Status of the badge (0: inactive, 1: active, 2: inactive locked, 3: active locked, 4: archived)'),
+                            'nextcron' => new external_value(PARAM_INT, 'Next cron'),
+                            'version' => new external_value(PARAM_RAW, 'Version of the badge', VALUE_OPTIONAL),
+                            'language' => new external_value(PARAM_RAW, 'Language of the badge'),
+                            'imageauthorname' => new external_value(PARAM_RAW, 'Name of the image author', VALUE_OPTIONAL),
+                            'imageauthoremail' => new external_value(PARAM_RAW, 'Email of the image author', VALUE_OPTIONAL),
+                            'imageauthorurl' => new external_value(PARAM_RAW, 'URL of the image author', VALUE_OPTIONAL),
+                            'imagecaption' => new external_value(PARAM_RAW, 'Caption of the image', VALUE_OPTIONAL)
+                        )
+                    )
+                ),
+                'warnings' => new external_warnings(),
+            )
+        );
+    }
+    /**
      * Describes the parameters for get_user_badges.
      *
      * @return external_function_parameters
